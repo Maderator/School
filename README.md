@@ -18,3 +18,6 @@ which were usually created in cooperation with 1-2 other students.
 - All created content is available under
 [CC BY-NC-SA 4.0 license](https://creativecommons.org/licenses/by-nc-sa/4.0/).
 
+### deep_reinforcement_learning
+- This folder contains my solution to the lab assignments of [Deep Reinforcement Learning (ÚFAL course NPFL122)](https://ufal.mff.cuni.cz/courses/npfl122/2122-winter).
+- The description of deep_learning also applies to these lab assignments
