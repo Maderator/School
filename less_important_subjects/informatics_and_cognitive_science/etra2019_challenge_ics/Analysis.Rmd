@@ -1,0 +1,358 @@
+---
+title: "Analysis"
+author: "Jan Maděra"
+date: '`r format(Sys.time(), "%d %B, %Y")`'
+output: html_document
+---
+
+## Load libraries
+
+```{r load libraries, warning = F, message = F}
+if(!require(tidyverse)){install.packages("tidyverse"); library(tidyverse)} # bundle of packages commonly used for analysis
+if(!require(here)){install.packages("here"); library(here)} # package for handling paths in the project
+if(!require(ez)){install.packages("ez"); library(ez)} # package for running ANOVAs
+if(!require(saccades)){install.packages("saccades"); library(saccades)} # package for detecting fixations
+
+if(!"devtools" %in% rownames(installed.packages())) install.packages("devtools")
+# Install the stable development versions from GitHub
+devtools::install_github("crsh/papaja")
+library(papaja)
+
+source("utils.R") # functions are in separate file for easier debugging
+```
+
+## Download data
+
+```{r download data}
+data_pth <- "data"
+if(!dir.exists(data_pth)) {
+  dir.create(data_pth)
+}
+# uncomment following file for downloading data
+# download.file("http://smc.neuralcorrelate.com/ETRA2019/ETRA2019Challenge.zip",here(data_pth,"ETRA2019Challenge.zip"))
+```
+
+## Hypotheses
+
+1. Mean of duration of fixation on blank grey picture with fixated head is different from mean of duration of fixation on natural pictures with fixated head.
+2.1 There is difference in change of diameter of pupil between start and end of fixations that: 
+  a) take more than 3000 time units
+  b) are shorter than 1000 time units
+2.2 There is difference in diameter of pupil at the end of fixations which 
+  a) take more than 3000 time units
+  b) are shorter than 1000 time units
+  
+Null hypotheses:
+1. Mean of duration of fixation on blank grey picture with fixated head is equal to mean of duration of fixation on natural pictures with fixated head.
+2.1 There is no difference in change of diameter of pupil between start and end of fixation.
+2.2 There is no difference in diameter of pupil at the end of fixations which 
+  a) take more than 3000 time units
+  b) are shorter than 1000 time units
+
+## Load data
+
+You can use *readr* package, which is supplied within *tidyverse* package bundle. Multiple files can be read using these lines of code.
+
+### first hypothesis
+For first hypothesis I loaded all participants trials for natural scene viewing and
+for blank scene viewing with fixated head.
+
+```{r load data for first hypothesis, warning=F, message = F}
+local_data_pth <- here(data_pth, "data")
+
+files <- dir(local_data_pth, recursive=TRUE, pattern = ".*Fixation_Natural_.*.csv") # get file names
+
+df_fix_natural <- files %>%
+  map(read_data) %>% 
+  reduce(rbind) %>% as_tibble()
+
+local_data_pth <- here(data_pth, "data")
+files <- dir(local_data_pth, recursive=TRUE, pattern = ".*Fixation_Blank_.*.csv") # get file names
+
+df_fix_blank <- files %>%
+  map(read_data) %>% 
+  reduce(rbind) %>% as_tibble()
+
+#sum_path <- here(data_pth, "DataSummary.csv")
+#data_summary <- read.table(file = sum_path, sep = ",")
+#data_summary <- file %>%
+#  map(read_data)
+
+#head(data_summary)
+
+```
+
+### second hypothesis
+For second hypothesis I divided the testing to two cases. 
+
+First I loaded all trials of only one participant because in my opinion 
+some participants could have much shorter/longer fixations than others. That could lead to bias in
+data for longer fixations than 3000 time units towards participants with longer fixation time and similarly
+the shorter fixations data than 1000 time units could be mainly from participants that
+have on average shorter fixations. This could make the difference between long and
+short fixations insignificant.
+
+```{r load data for second hypothesis with one participant, warning=F, message = F}
+# first case with one participant
+local_data_pth <- here(data_pth, "data", "009")
+files <- dir(local_data_pth, pattern = ".*Fixation.*.csv") # get file names
+
+df_fix009 <- files %>%
+  map(read_data) %>% 
+  reduce(rbind) %>% as_tibble()
+```
+
+In second case I tried to load all the data of all participants and do the test on on whole dataset.
+```{r load whole dataset for second hypothesis, warning=F, message = F}
+
+# second case with all data
+local_data_pth <- here(data_pth, "data")
+
+files <- dir(local_data_pth, recursive=TRUE, pattern = ".*Fixation.*.csv") # get file names
+
+df_fix_whole_dataset <- files %>%
+  map(read_data) %>% 
+  reduce(rbind) %>% as_tibble()
+```
+
+## Data manipulation
+
+This is an optional section, in which you could describe, what did you do with the data to obtain given format. In our example, we just need to merge the data. Additionally, we want to detect fixations
+
+For the first hypothesis I merged data and detected fixations as in the example data manipulation.
+
+```{r data manipulation first hypothesis}
+df_hyp1_samples <- rbind(df_fix_blank,df_fix_natural) %>% 
+  rename(time = Time, trial = trial_id, x = LXpix, y = LYpix) %>% 
+  group_by(participant_id, trial) %>% 
+  mutate(time = time - (min(time))) %>% 
+  ungroup()
+
+#df_hyp1_samples <- filter(df_hyp1_samples, participant_id == "009/009")
+
+#df_hyp1_samples %>% group_by(participant_id, trial) %>% summarise(.)
+
+df_hyp1_fix <- df_hyp1_samples %>% 
+  group_by(participant_id) %>% 
+  do(detect.fixations(.))
+
+# samples <- df_hyp1_samples
+# fixations <- df_hyp1_fix
+# first.trial <- samples$trial[1]
+# first.trial.samples <- subset(samples, trial==first.trial)
+# first.trial.fixations <- subset(fixations, trial==first.trial)
+# with(first.trial.samples, plot(x, y, pch=20, cex=0.2, col="red"))
+# with(first.trial.fixations, points(x, y, cex=1+sqrt(dur/10000)))
+  
+df_hyp1_fix <- df_hyp1_samples %>% select(participant_id, trial, fv_fixation, task_type, stimulus_id) %>% distinct() %>% left_join(df_hyp1_fix, by = c("participant_id", "trial"))
+
+```
+
+For the second hypothesis we also find all the fixations and then we compute the difference of pupil size between end and start of each fixation. After that, we use filter function to get two groups of fixations. Fixations longer than 3000 and fixations shorter than 1000. 
+
+```{r data manipulation second hypothesis with one participant}
+
+df_hyp2_samples <- df_fix009 %>%
+  rename(time = Time, trial = trial_id, x = LXpix, y = LYpix) %>% 
+  group_by(participant_id, trial) %>% 
+  mutate(time = time - (min(time))) %>% 
+  ungroup()
+
+df_hyp2_fix <- df_hyp2_samples %>% 
+  group_by(participant_id, trial) %>% 
+  do(detect.fixations(.))
+
+df_hyp2_fix <- df_hyp2_samples %>% select(participant_id, trial, fv_fixation, task_type, stimulus_id) %>% distinct() %>% left_join(df_hyp2_fix, by = c("participant_id", "trial"))
+
+# Add the pupil size at the end of fixation
+df_hyp2_fix <- df_hyp2_fix %>% mutate(time = end)
+df_hyp2_samples_pupil_size <- df_hyp2_samples %>% mutate(end_pupil_size = (LP+RP)/2) %>% select(participant_id, trial, time, end_pupil_size)
+df_hyp2_fix <- merge(df_hyp2_samples_pupil_size, df_hyp2_fix, by = c("participant_id", "trial", "time")) 
+
+
+# Add the pupil size at the start of fixation
+df_hyp2_fix <- df_hyp2_fix %>% mutate(time = start)
+df_hyp2_samples_pupil_size <- df_hyp2_samples_pupil_size %>% mutate(start_pupil_size = end_pupil_size) %>% select(-end_pupil_size)
+df_hyp2_fix <- merge(df_hyp2_samples_pupil_size, df_hyp2_fix, by = c("participant_id", "trial", "time")) %>%
+              select(participant_id, trial, start_pupil_size, end_pupil_size, stimulus_id, start, end, dur)
+# Compute difference of pupil size at the beginning and at the end of fixation
+df_hyp2_fix <- df_hyp2_fix %>% mutate(pupil_dif = end_pupil_size - start_pupil_size)
+
+# Filter only fixations with duration > 3000
+dur3000 <- df_hyp2_fix %>% filter(dur > 3000)
+dur3000 <- dur3000 %>% mutate(fixation_type = "long")
+
+# Filter only fixations with duration < 1000
+dur1000 <- df_hyp2_fix %>% filter(dur < 1000)
+dur1000 <- dur1000 %>% mutate(fixation_type = "short")
+
+# Merge long and short fixations together
+fixations_hyp2 <- rbind(dur3000, dur1000)
+```
+
+```{r data manipulation second hypothesis with whole dataset}
+
+df_hyp2_whole_samples <- df_fix_whole_dataset %>%
+  rename(time = Time, trial = trial_id, x = LXpix, y = LYpix) %>% 
+  group_by(participant_id, trial) %>% 
+  mutate(time = time - (min(time))) %>% 
+  ungroup()
+
+df_hyp2_whole_fix <- df_hyp2_whole_samples %>% 
+  group_by(participant_id) %>% 
+  do(detect.fixations(.))
+
+df_hyp2_whole_fix <- df_hyp2_whole_samples %>% select(participant_id, trial, fv_fixation, task_type, stimulus_id) %>% distinct() %>% left_join(df_hyp2_whole_fix, by = c("participant_id", "trial"))
+
+# Add the pupil size at the end of fixation
+df_hyp2_whole_fix <- df_hyp2_whole_fix %>% mutate(time = end)
+df_hyp2_whole_samples_pupil_size <- df_hyp2_whole_samples %>% mutate(end_pupil_size = (LP+RP)/2) %>% select(participant_id, trial, time, end_pupil_size)
+df_hyp2_whole_fix <- merge(df_hyp2_whole_samples_pupil_size, df_hyp2_whole_fix, by = c("participant_id", "trial", "time")) 
+
+
+# Add the pupil size at the start of fixation
+df_hyp2_whole_fix <- df_hyp2_whole_fix %>% mutate(time = start)
+df_hyp2_whole_samples_pupil_size <- df_hyp2_whole_samples_pupil_size %>% mutate(start_pupil_size = end_pupil_size) %>% select(-end_pupil_size)
+df_hyp2_whole_fix <- merge(df_hyp2_whole_samples_pupil_size, df_hyp2_whole_fix, by = c("participant_id", "trial", "time")) %>%
+              select(participant_id, trial, start_pupil_size, end_pupil_size, stimulus_id, start, end, dur)
+# Compute difference of pupil size at the beginning and at the end of fixation
+df_hyp2_whole_fix <- df_hyp2_whole_fix %>% mutate(pupil_dif = end_pupil_size - start_pupil_size)
+
+# Filter only fixations with duration > 3000
+whole_dur3000 <- df_hyp2_whole_fix %>% filter(dur > 3000)
+whole_dur3000 <- whole_dur3000 %>% mutate(fixation_type = "long")
+
+# Filter only fixations with duration < 1000
+whole_dur1000 <- df_hyp2_whole_fix %>% filter(dur < 1000)
+whole_dur1000 <- whole_dur1000 %>% mutate(fixation_type = "short")
+
+# Merge long and short fixations together
+fixations_whole_hyp2 <- rbind(whole_dur3000, whole_dur1000)
+```
+
+Some subtask might have different columns, so you need to use dplyr *select* or *mutate*, otherwise rbind won't work. But hey, data manipulation takes significant portion of time in each analysis.
+
+
+## Results
+
+In this section, describe statistical test that you used for testing your hypotheses. In general, the selection of statistical test depends on the type of variable. 
+
+There are following types of variables:
+
+* Continuous - when the variable behaves as number. All fixation durations, pupil size, time are continuous variables
+* Ordinal - variables do not behave as numbers, but you can order them. Grades in school are typical example. You can't say how many times is 1 better than 2, but but you can say that 1 is better grade than 2. There are no nominal variables in this dataset, so I added this description only for completness.
+* Nominal - when variables are qualitative different. Type of task is an example of nominal variable
+
+In the case of two variables, there are following options
+* both variables continuous - regression or correlation (in R function `lm()` or `cor`/`cor.test` )
+* both variables nominal - contingency tables a chi square test
+* one variable nominal, other continuous - this is very common, this type is used, when we compare differences two condition - in this case, we use t.tests
+
+There are three main types of t.tests
+
+* Independent t-test - both groups contain independent data points (each data point is a different entity)
+* Paired t-test - data points are linked to each other. This is typical example, when we measure same subjects multiple times
+* One sample t-test - we are testing the sample against some theoretically interesting number
+
+In case of more than two variables, we need to use ANOVAs. Usually, one variable will be dependent (outcome, the one which levels interest us) and others will be independent (predictors, the one, that we manipulate). 
+* For more than two groups, we use between-subject ANOVA
+* For more than two measurement of same subject, we use within-subject ANOVA
+* We can combine multiple between- and within-subject factors into mixed ANOVA
+
+In our case, simplest way how to test that is to aggregate data per each trial and use t-tests
+
+### Hypothesis 1 using t-tests
+
+Because we have multiple data points from each participant, we can first aggregate data for each trial.
+Our null hypothesis can be formulated as: 
+
+```{r t testHyp1}
+t_test_result1 <- df_hyp1_fix %>% 
+  group_by(task_type, participant_id, trial) %>% 
+  summarize(dur = mean(dur)) %>% 
+  t.test(dur~task_type,.)
+
+t_test_result1
+```
+
+Results show that there is no difference between Fixation duration in Blank and Natural scene (`r apa_print(t_test_result1)$statistic`)
+
+### Hypothesis 2.1
+
+```{r t testHyp2.1 with one participant}
+
+#fixations_hyp2 %>% 
+#  group_by(participant_id, fixation_type, trial) %>% 
+#  summarize(pupil_dif = mean(pupil_dif))
+
+t_test_result2 <- fixations_hyp2 %>% 
+  group_by(participant_id, fixation_type, trial) %>% 
+  summarize(pupil_dif = mean(pupil_dif)) %>% 
+  t.test(pupil_dif~fixation_type,.)
+
+t_test_result2
+
+```
+```{r t testHyp2.1 with whole dataset}
+
+#fixations_whole_hyp2 %>% 
+#  group_by(participant_id, fixation_type, trial) %>% 
+#  summarize(pupil_dif = mean(pupil_dif))
+
+t_test_result2_whole <- fixations_whole_hyp2 %>% 
+  group_by(participant_id, fixation_type, trial) %>% 
+  summarize(pupil_dif = mean(pupil_dif)) %>% 
+  t.test(pupil_dif~fixation_type,.)
+
+t_test_result2_whole
+```
+Results of both test on one participant and also on whole dataset show significant
+difference in change of size of pupil in fixations shorter than 1000 (marked "short") and fixations
+longer than 3000 (marked "long") (`r apa_print(t_test_result2_whole)$statistic`). 
+This is to me an obvious result because change of pupil size takes a lot of time and longer
+fixations allow participants pupils to change more than shorter fixations.
+
+### Hypothesis 2.2
+```{r t testHyp2.2 with one participant}
+
+#fixations_hyp2 %>% 
+#  group_by(participant_id, fixation_type, trial) %>% 
+#  summarize(pupil_dif = mean(pupil_dif))
+
+t_test_result2_2 <- fixations_hyp2 %>% 
+  group_by(participant_id, fixation_type, trial) %>% 
+  summarize(pupil_size = mean(end_pupil_size)) %>% 
+  t.test(pupil_size~fixation_type,.)
+
+t_test_result2_2
+
+```
+
+```{r t testHyp2.2 with whole dataset}
+
+#fixations_whole_hyp2 %>% 
+#  group_by(participant_id, fixation_type, trial) %>% 
+#  summarize(pupil_dif = mean(pupil_dif))
+
+t_test_result2_2_whole <- fixations_whole_hyp2 %>% 
+  group_by(participant_id, fixation_type, trial) %>% 
+  summarize(pupil_size = mean(end_pupil_size)) %>% 
+  t.test(pupil_size~fixation_type,.)
+
+t_test_result2_2_whole
+```
+Results of both test on one participant and also on whole dataset again show significant
+difference in size of pupil in fixations shorter than 1000 (marked "short") and fixations
+longer than 3000 (marked "long") at the end of fixation
+(`r apa_print(t_test_result2_2_whole)$statistic`). 
+
+This result was not so obvious to me. I expected the size of pupil to be smaller in the
+case of longer fixation but it is the shorter fixation that has on average smaller
+pupil at the end of fixation than the longer fixation. I expected that the pupils
+get smaller when participants have longer fixations which could be caused by 
+them looking on something that gets them excited. This result could suggest that
+pupils get larger (contrary to my belief) when participants are excited. 
+
+As I am not biologist nor did I study the change in pupil size in depth, )
+this is only my subjective opinion based on mean size of the pupil at the end of fixation.
+

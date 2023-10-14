@@ -1,0 +1,159 @@
+---
+title: "analysis"
+author: "Jan Maděra"
+date: '`r format(Sys.time(), "%d %B, %Y")`'
+output: html_document
+---
+
+## Load libraries
+
+```{r load libraries, warning = F, message = F}
+if(!require(tidyverse)){install.packages("tidyverse"); library(tidyverse)} # bundle of packages commonly used for analysis
+if(!require(here)){install.packages("here"); library(here)} # package for handling paths in the project
+if(!require(ez)){install.packages("ez"); library(ez)} # package for running ANOVAs
+
+if(!"devtools" %in% rownames(installed.packages())) install.packages("devtools")
+# Install the stable development versions from GitHub
+devtools::install_github("crsh/papaja")
+library(papaja)
+
+library(quickpsy) # quickpsy library
+
+source("utils.R") # functions are in separate file for easier debugging
+```
+
+## Load and tidy data
+
+```{r download data, message=FALSE, warning=FALSE}
+data_pth <- "data"
+local_data_pth <- here(data_pth)
+local_data_pth
+
+contrast_files <- dir(local_data_pth, recursive=TRUE, pattern = ".*contrast.*.csv") # get white black contrast file names
+color_files <- dir(local_data_pth, recursive=TRUE, pattern = ".*color.*.csv") # get green color contrast file names
+
+data_contrast <- contrast_files %>%
+  map(read_data) %>%
+  reduce(rbind) %>% as_tibble() %>%
+  mutate(choice=replace(key_response.keys, key_response.keys=="left", 0)) %>%
+  mutate(choice=replace(choice, choice=="right", 1)) %>%
+  mutate(choice= as.numeric(choice))
+
+data_color <- color_files %>%
+  map(read_data) %>%
+  reduce(rbind) %>% as_tibble() %>%
+  mutate(choice=replace(key_response.keys, key_response.keys=="left", 0)) %>%
+  mutate(choice=replace(choice, choice=="right", 1)) %>%
+  mutate(choice= as.numeric(choice))
+
+data_contrast
+data_color
+```
+```{r basic statistics}
+sm_contrast_info <- data_contrast %>%
+  select(participant_id, rgb_luminance, choice, key_response.rt, key_response.started) %>%
+  group_by(participant_id) %>%
+  summarise(avg_response = mean(choice), right = sum(choice), left = n()-sum(choice), total_time = max(key_response.started), avg_t_resonse = total_time/n())
+
+sm_color_info <- data_color %>%
+  select(participant_id, rgb_luminance, choice, key_response.rt, key_response.started) %>%
+  group_by(participant_id) %>%
+  summarise(avg_response = mean(choice), right = sum(choice), left = n()-sum(choice), total_time = max(key_response.started), avg_t_resonse = total_time/n())
+
+sm_contrast_info
+sm_color_info
+```
+
+```{r mutate choice column and select columns}
+# left = 0, right = 1
+data_contrast_clean <- data_contrast %>%
+  mutate(choice=replace(key_response.keys, key_response.keys=="left", 0)) %>%
+  mutate(choice=replace(choice, choice=="right", 1)) %>%
+  mutate(choice= as.numeric(choice)) %>%
+  mutate(Run = 1) %>%
+  #select(participant_id, task_type, choice, trials.thisTrialN, trials.thisN, trials.thisIndex, rgb_luminance)
+  select(participant_id, task_type, choice, rgb_luminance, Run)
+
+data_color_clean <- data_color %>%
+  mutate(choice=replace(key_response.keys, key_response.keys=="left", 0)) %>%
+  mutate(choice=replace(choice, choice=="right", 1)) %>%
+  mutate(choice= as.numeric(choice)) %>%
+  mutate(Run = 1) %>%
+  #select(participant_id, task_type, choice, trials.thisTrialN, trials.thisN, trials.thisIndex, rgb_luminance)
+  select(participant_id, task_type, choice, rgb_luminance, Run)
+
+data_contrast_clean
+data_color_clean
+```  
+```{r group data}
+sm_contrast <- data_contrast_clean %>%
+  group_by(participant_id, rgb_luminance) %>%
+  summarise(avg_response = mean(choice), Run = max(Run)) 
+
+sm_color <- data_color_clean %>%
+  group_by(participant_id, rgb_luminance) %>%
+  summarise(avg_response = mean(choice), Run = max(Run), right = sum(choice), left = n()-sum(choice))
+
+sm_contrast
+sm_color
+```
+
+## Psychopy data inspection
+
+```{r inspect data}
+
+qplot(rgb_luminance, avg_response,
+      colour=participant_id, size=I(5),
+      data=sm_contrast)
+
+qplot(rgb_luminance, avg_response,
+      colour=participant_id, size=I(5),
+      data=sm_color)
+
+qplot(rgb_luminance, avg_response,
+      colour=participant_id, size=I(5),
+      data=sm_contrast) + facet_grid(Run ~ participant_id)
+
+qplot(rgb_luminance, avg_response,
+      colour=participant_id, size=I(5),
+      data=sm_color) + facet_grid(Run ~ participant_id)
+
+a <- sm_color %>% filter(participant_id=="a")
+b <- sm_color %>% filter(participant_id=="b")
+c <- sm_color %>% filter(participant_id=="c")
+
+qplot(rgb_luminance, right,
+      size=I(5),
+      data=a) + geom_point(aes(y=left), shape=I(2), size=I(5), colour=I("red"))
+
+qplot(rgb_luminance, right,
+      size=I(5),
+      data=b) + geom_point(aes(y=left), shape=I(2), size=I(5), colour=I("red"))
+
+qplot(rgb_luminance, right,
+      size=I(5),
+      data=c) + geom_point(aes(y=left), shape=I(2), size=I(5), colour=I("red"))
+
+```
+```{r computing psychometric curve contrast}
+
+fit <- quickpsy(sm_contrast, rgb_luminance, avg_response, grouping = c("participant_id")) 
+plot(fit, color = participant_id)
+
+fit$thresholds
+
+#quickpsy::thresholds(fit, 0.6)
+
+```
+```{r computing psychometric curve color}
+
+fit <- quickpsy(sm_color, rgb_luminance, avg_response, grouping = c("participant_id")) 
+plot(fit, color = participant_id)
+
+fit$thresholds
+
+quickpsy::thresholds(fit, 0.6)
+
+```
+
+  

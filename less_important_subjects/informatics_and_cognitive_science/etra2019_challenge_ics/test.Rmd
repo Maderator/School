@@ -1,0 +1,47 @@
+---
+title: "Analysis"
+author: "Jan Maděra"
+date: '`r format(Sys.time(), "%d %B, %Y")`'
+output: html_document
+---
+
+## Load libraries
+
+```{r load libraries, warning = F, message = F}
+if(!require(tidyverse)){install.packages("tidyverse"); library(tidyverse)} # bundle of packages commonly used for analysis
+if(!require(here)){install.packages("here"); library(here)} # package for handling paths in the project
+if(!require(ez)){install.packages("ez"); library(ez)} # package for running ANOVAs
+if(!require(saccades)){install.packages("saccades"); library(saccades)} # package for detecting fixations
+
+if(!"devtools" %in% rownames(installed.packages())) install.packages("devtools")
+# Install the stable development versions from GitHub
+devtools::install_github("crsh/papaja")
+library(papaja)
+
+source("utils.R") # functions are in separate file for easier debugging
+```
+
+## Download data
+
+```{r download data}
+data_pth <- "data"
+if(!dir.exists(data_pth)) {
+  dir.create(data_pth)
+}
+# uncomment following file for downloading data
+# download.file("http://smc.neuralcorrelate.com/ETRA2019/ETRA2019Challenge.zip",here(data_pth,"ETRA2019Challenge.zip"))
+```
+
+## Hypotheses
+
+### second hypo
+1. Mean of duration of fixation on blank grey picture with fixated head is different from mean of duration of fixation on natural pictures with fixated head.
+2. There is difference in diameter of pupil at the end of fixations which 
+  a) take more than 3000 time units
+  b) are shorter than 1000 time units
+  
+Null hypotheses:
+1. Mean of duration of fixation on blank grey picture with fixated head is equal to mean of duration of fixation on natural pictures with fixated head.
+2. There is no difference in diameter of pupil at the end of fixations which 
+  a) take more than 3000 time units
+  b) are shorter than 1000 time units
